@@ -16,6 +16,7 @@ from sklearn.metrics import r2_score
 from src.exception import CustomException
 from src.logger import logging
 from sklearn.neighbors import KNeighborsRegressor
+from sklearn.model_selection import GridSearchCV
 from src.utils import save_object
 @dataclass
 
@@ -46,8 +47,43 @@ class ModelTrainer:
                 'XGB Regressor': XGBRegressor(),
                 'CatBoost Regressor': CatBoostRegressor(verbose=False)
             }
-
-            model_report: dict = self.evaluate_models(X_train, y_train, X_test, y_test, models)
+            params = {
+                "Decision Tree": {
+                    'criterion': ['squared_error','friedman_mse','absolute_error'],
+                    # 'max_depth': 10,
+                    # 'min_samples_split': 5
+                },
+                "Random Forest": {
+                    'n_estimators': [50, 100],
+                    'max_depth': [10, 20],
+                    'min_samples_split': [2, 5]
+                },
+                "Gradient Boosting": {
+                    'n_estimators': [50, 100],
+                    'learning_rate': [0.01, 0.1],
+                    'max_depth': [3, 5]
+                },
+                "AdaBoost": {
+                    'n_estimators': [50, 100],
+                    'learning_rate': [0.01, 0.1]
+                },
+                "KNeighbors": {
+                    'n_neighbors': [3, 5, 7],
+                    'weights': ['uniform', 'distance']
+                },
+                "XGB": {
+                    'n_estimators': [50, 100],
+                    'learning_rate': [0.01, 0.1],
+                    'max_depth': [3, 5]
+                },
+                "CatBoost": {
+                    'iterations': [100, 200],
+                    'learning_rate': [0.01, 0.1],
+                    'depth': [3, 5]
+                }
+        
+            }
+            model_report: dict = self.evaluate_models(X_train, y_train, X_test, y_test, models=models,param=params)
 
             best_model_score = max(model_report.values())
             best_model_name = max(model_report, key=model_report.get)
@@ -69,12 +105,24 @@ class ModelTrainer:
 
         except Exception as e:
             raise CustomException(e, sys)
-
-    def evaluate_models(self, X_train, y_train, X_test, y_test, models):
+            
+    def evaluate_models(self, X_train, y_train, X_test, y_test, models, param):
         model_report = {}
-        for model_name, model in models.items():
-            model.fit(X_train, y_train)
+
+        for model_name, model in models.items():  # ✅ FIXED
+            logging.info(f"Training and evaluating: {model_name}")
+            param_grid = param.get(model_name, {})
+
+            if param_grid:
+                logging.info(f"Performing GridSearchCV for: {model_name}")
+                grid_search = GridSearchCV(model, param_grid, cv=3, scoring='r2', n_jobs=-1)
+                grid_search.fit(X_train, y_train)
+                model = grid_search.best_estimator_
+            else:
+                model.fit(X_train, y_train)
+
             predicted = model.predict(X_test)
             r2_square = r2_score(y_test, predicted)
             model_report[model_name] = r2_square
+
         return model_report
